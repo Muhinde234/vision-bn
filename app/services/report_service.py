@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.diagnosis import Diagnosis, DiagnosisStatus
+from app.models.diagnosis import Diagnosis, DiagnosisStatus, DiagnosisSeverity
 
 
 class ReportService:
@@ -30,7 +30,7 @@ class ReportService:
                 selectinload(Diagnosis.result),
                 selectinload(Diagnosis.created_by),
             )
-            .where(Diagnosis.status == DiagnosisStatus.COMPLETED)
+            .where(Diagnosis.status.in_([DiagnosisStatus.COMPLETED, DiagnosisStatus.REVIEWED]))
         )
         if date_from:
             query = query.where(Diagnosis.created_at >= date_from)

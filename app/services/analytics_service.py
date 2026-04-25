@@ -48,8 +48,8 @@ class AnalyticsService:
         cached = _cache_get(cache_key)
         if cached is not None:
             return cached
-        # Base filter
-        filters = [Diagnosis.status == DiagnosisStatus.COMPLETED]
+        # Base filter — include both completed and reviewed diagnoses
+        filters = [Diagnosis.status.in_([DiagnosisStatus.COMPLETED, DiagnosisStatus.REVIEWED])]
         if date_from:
             filters.append(Diagnosis.created_at >= datetime.combine(date_from, datetime.min.time()))
         if date_to:
