@@ -19,7 +19,13 @@ _engine_kwargs = dict(echo=settings.DEBUG)
 if not _is_sqlite:
     _engine_kwargs.update(pool_size=10, max_overflow=20, pool_pre_ping=True)
 
-engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
+# asyncpg does not understand sslmode=; strip it and pass ssl via connect_args
+_db_url = settings.DATABASE_URL
+if "asyncpg" in _db_url and "sslmode" in _db_url:
+    _db_url = _db_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+    _engine_kwargs["connect_args"] = {"ssl": "require"}
+
+engine = create_async_engine(_db_url, **_engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
