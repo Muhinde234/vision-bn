@@ -23,8 +23,6 @@ def setup_logging() -> None:
     if settings.is_production:
         renderer = structlog.processors.JSONRenderer()
     else:
-        import sys
-        # Disable ANSI colors on Windows to avoid cp1252 UnicodeEncodeError
         use_colors = sys.platform != "win32"
         renderer = structlog.dev.ConsoleRenderer(colors=use_colors)
 
