@@ -1,0 +1,32 @@
+# Dev artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.log
+
+# Local database & uploads
+*.db
+*.sqlite3
+uploads/
+
+# Malaria dataset (large - mounted as volume at runtime)
+malaria/
+
+# Pre-trained models (mounted as volume at runtime)
+models/
+
+# Env files
+.env
+.env.*
+
+# Git
+.git/
+.gitignore
+
+# Docs
+*.md

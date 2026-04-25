@@ -1,0 +1,60 @@
+# ── Core ──────────────────────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9        # file upload support
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy==2.0.30
+alembic==1.13.1
+asyncpg==0.29.0                # async PostgreSQL driver
+psycopg2-binary==2.9.9         # sync driver (Alembic)
+
+# ── Auth & Security ───────────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0
+bcrypt==5.0.0                  # direct bcrypt (passlib incompatible with bcrypt>=4)
+python-dotenv==1.0.1
+
+# ── Validation & Config ───────────────────────────────────────────────────────
+pydantic==2.7.1
+pydantic-settings==2.2.1
+email-validator==2.1.1
+
+# ── Caching / Queue ───────────────────────────────────────────────────────────
+redis==5.0.4
+celery==5.4.0
+flower==2.0.1                  # Celery monitoring UI
+
+# ── Image Processing ──────────────────────────────────────────────────────────
+Pillow==11.2.1
+opencv-python-headless==4.10.0.84
+
+# ── AI Inference ──────────────────────────────────────────────────────────────
+httpx==0.27.0                  # async HTTP client for inference microservice
+numpy==2.2.4
+
+# ── Malaria YOLO training + inference ────────────────────────────────────────
+ultralytics>=8.2.0             # YOLOv8 training & inference engine
+onnx>=1.16.0                   # ONNX export support
+onnxruntime>=1.18.0            # ONNX runtime (CPU inference without GPU)
+
+# ── Reporting ─────────────────────────────────────────────────────────────────
+reportlab==4.1.0               # PDF generation
+openpyxl==3.1.2                # Excel export
+
+# ── Observability ─────────────────────────────────────────────────────────────
+structlog==24.1.0
+prometheus-fastapi-instrumentator==6.1.0
+sentry-sdk[fastapi]==2.3.1
+
+# ── Rate Limiting ─────────────────────────────────────────────────────────────
+slowapi==0.1.9
+
+# ── Storage ───────────────────────────────────────────────────────────────────
+boto3==1.34.87                 # S3-compatible storage (AWS / MinIO)
+aiofiles==23.2.1
+
+# ── Dev & Testing ─────────────────────────────────────────────────────────────
+pytest==8.2.0
+pytest-asyncio==0.23.6
+factory-boy==3.3.0
+faker==25.0.0

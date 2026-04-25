@@ -1,0 +1,92 @@
+services:
+
+  # ── FastAPI Web Service ──────────────────────────────────────────────────────
+  - type: web
+    name: visiondx-api
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    startCommand: >-
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2"
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: LOG_LEVEL
+        value: INFO
+      - key: STORAGE_BACKEND
+        value: local
+      - key: UPLOAD_DIR
+        value: /app/uploads
+      - key: MAX_IMAGE_SIZE_MB
+        value: 10
+      - key: INFERENCE_BACKEND
+        value: local
+      - key: CONFIDENCE_THRESHOLD
+        value: 0.35
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 60
+      - key: DATABASE_URL
+        fromDatabase:
+          name: visiondx-db
+          property: connectionString
+      - key: SYNC_DATABASE_URL
+        fromDatabase:
+          name: visiondx-db
+          property: connectionString
+      # Set these manually in Render dashboard after creating Upstash Redis
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      # Set this after your first deploy (use your Render public URL)
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  # ── Celery Background Worker ─────────────────────────────────────────────────
+  - type: worker
+    name: visiondx-worker
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: .
+    plan: free
+    startCommand: >-
+      celery -A app.tasks.celery_app worker
+      -Q inference,celery --loglevel=info --concurrency=2
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: visiondx-db
+          property: connectionString
+      - key: SYNC_DATABASE_URL
+        fromDatabase:
+          name: visiondx-db
+          property: connectionString
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: visiondx-api
+          envVarKey: SECRET_KEY
+
+# ── PostgreSQL Database ────────────────────────────────────────────────────────
+databases:
+  - name: visiondx-db
+    databaseName: visiondx
+    user: visiondx
+    plan: free
