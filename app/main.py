@@ -49,6 +49,12 @@ if settings.SENTRY_DSN:
 async def lifespan(app: FastAPI):
     setup_logging()
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    # Create all tables if they don't exist (safe to run on every startup)
+    import app.models  # noqa: F401 — registers all models with Base
+    from app.db.base import Base
+    from app.db.session import engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     logger.info("VisionDx API starting", version=settings.APP_VERSION, env=settings.APP_ENV)
     yield
     logger.info("VisionDx API shutting down")
