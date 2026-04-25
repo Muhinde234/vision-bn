@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "c:\\Users\\IGIRIMPUHWE Dositha\\Desktop\\final-project\\vision-backend"
+    ],
+    "allow": [
+      "Bash(xargs grep *)"
+    ]
+  }
+}
