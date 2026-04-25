@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
     # ── Storage ───────────────────────────────────────────────────────────────
-    STORAGE_BACKEND: Literal["local", "s3"] = "local"
+    STORAGE_BACKEND: Literal["local", "s3", "cloudinary"] = "local"
     UPLOAD_DIR: str = "./uploads"
     MAX_IMAGE_SIZE_MB: int = 10
 
@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: str = "visiondx-images"
     AWS_S3_REGION: str = "us-east-1"
     AWS_S3_ENDPOINT_URL: str = ""
+
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
 
     # ── AI Inference ──────────────────────────────────────────────────────────
     INFERENCE_BACKEND: Literal["microservice", "local"] = "microservice"

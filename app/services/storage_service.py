@@ -1,6 +1,6 @@
 """
-Abstracted file storage – local disk or S3/MinIO.
-Returns a storage_path (local path or S3 key) that is persisted to the DB.
+Abstracted file storage – local disk, S3/MinIO, or Cloudinary.
+Returns a storage_path (local path, S3 key, or Cloudinary public_id) persisted to DB.
 """
 import uuid
 from functools import lru_cache
@@ -12,6 +12,19 @@ import aiofiles
 from app.config import settings
 from app.core.exceptions import StorageError
 from app.core.logging import logger
+
+
+@lru_cache(maxsize=1)
+def _get_cloudinary():
+    import cloudinary
+    import cloudinary.uploader
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True,
+    )
+    return cloudinary.uploader
 
 
 @lru_cache(maxsize=1)
@@ -35,16 +48,22 @@ class StorageService:
         ext = Path(original_filename).suffix.lower()
         key = f"{prefix}/{uuid.uuid4().hex}{ext}"
 
+        if settings.STORAGE_BACKEND == "cloudinary":
+            return await self._save_cloudinary(data, prefix)
         if settings.STORAGE_BACKEND == "local":
             return await self._save_local(data, key)
         return await self._save_s3(data, key)
 
     async def get_url(self, storage_path: str) -> str:
+        if settings.STORAGE_BACKEND == "cloudinary":
+            return storage_path  # Cloudinary returns a full HTTPS URL as the path
         if settings.STORAGE_BACKEND == "local":
             return f"/static/{storage_path}"
         return await self._presign_s3(storage_path)
 
     async def delete(self, storage_path: str) -> None:
+        if settings.STORAGE_BACKEND == "cloudinary":
+            return  # skip deletion for now
         if settings.STORAGE_BACKEND == "local":
             await self._delete_local(storage_path)
         else:
@@ -64,6 +83,27 @@ class StorageService:
         full_path = Path(settings.UPLOAD_DIR) / key
         if full_path.exists():
             full_path.unlink()
+
+    # ── Cloudinary ───────────────────────────────────────────────────────────
+
+    async def _save_cloudinary(self, data: bytes, folder: str) -> str:
+        import asyncio
+        from io import BytesIO
+
+        uploader = _get_cloudinary()
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                None,
+                lambda: uploader.upload(
+                    BytesIO(data),
+                    folder=f"visiondx/{folder}",
+                    resource_type="image",
+                ),
+            )
+            return result["secure_url"]
+        except Exception as exc:
+            raise StorageError(f"Cloudinary upload failed: {exc}") from exc
 
     # ── S3 ────────────────────────────────────────────────────────────────────
 
