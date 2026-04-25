@@ -62,8 +62,8 @@ app = FastAPI(
         "AI-powered malaria diagnostic API. "
         "Detects parasite life stages from whole blood smear images using YOLOv9."
     ),
-    docs_url="/docs" if not settings.is_production else None,
-    redoc_url="/redoc" if not settings.is_production else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan,
 )
 
