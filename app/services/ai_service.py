@@ -22,6 +22,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from PIL import Image as PILImage
@@ -30,6 +31,8 @@ from app.config import settings
 from app.core.logging import logger
 from app.models.prediction import DiseaseType
 from app.schemas.prediction import AIResultDetail, BoundingBox
+
+_MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "best.pt"
 
 
 # ── Result container ──────────────────────────────────────────────────────────
@@ -332,6 +335,342 @@ class MicroserviceYOLOv9Engine(InferenceEngine):
         )
 
 
+# ── ONNX inference engine (production — no PyTorch required) ─────────────────
+
+class LocalONNXEngine(InferenceEngine):
+    """
+    Runs models/best.onnx via onnxruntime.
+    No PyTorch / ultralytics needed at runtime — only ~50 MB RAM footprint.
+    This is what Render uses. Train locally, export ONNX, commit the file.
+
+    Class IDs match prepare_yolo_dataset.py:
+        0 red blood cell  1 trophozoite  2 ring
+        3 schizont        4 gametocyte   5 leukocyte
+    """
+
+    ONNX_PATH     = Path(__file__).resolve().parents[2] / "models" / "best.onnx"
+    MODEL_VERSION = "yolov9n-malaria-onnx-v1.0"
+    IMG_SIZE      = 640
+    CONF_THRESH   = 0.25
+    IOU_THRESH    = 0.45
+
+    # Indices 1-4 are parasites; 0 (RBC) and 5 (leukocyte) are benign
+    _TRAIN_CLASSES = [
+        "red blood cell", "trophozoite", "ring", "schizont", "gametocyte", "leukocyte"
+    ]
+    _PARASITE_IDS = {1, 2, 3, 4}   # trophozoite, ring, schizont, gametocyte
+
+    _DISPLAY = {
+        "ring":           "Ring Stage",
+        "trophozoite":    "Trophozoite",
+        "schizont":       "Schizont",
+        "gametocyte":     "Gametocyte",
+        "red blood cell": "Negative",
+        "leukocyte":      "Negative",
+    }
+
+    def __init__(self) -> None:
+        import onnxruntime as ort
+        logger.info("Loading ONNX model", path=str(self.ONNX_PATH))
+        self._session = ort.InferenceSession(
+            str(self.ONNX_PATH),
+            providers=["CPUExecutionProvider"],
+        )
+        self._input_name = self._session.get_inputs()[0].name
+
+    # ── Async wrapper ─────────────────────────────────────────────────────────
+
+    async def infer(
+        self,
+        image_bytes: bytes,
+        disease_type: DiseaseType,
+        image_width: int,
+        image_height: int,
+    ) -> AIResult:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self._run_sync, image_bytes, disease_type, image_width, image_height
+        )
+
+    # ── Sync inference pipeline ───────────────────────────────────────────────
+
+    def _run_sync(
+        self,
+        image_bytes: bytes,
+        disease_type: DiseaseType,
+        image_width: int,
+        image_height: int,
+    ) -> AIResult:
+        import numpy as np
+
+        t0 = time.monotonic()
+
+        # 1. Preprocess
+        tensor, scale_x, scale_y = self._preprocess(image_bytes)
+
+        # 2. Inference
+        raw_out = self._session.run(None, {self._input_name: tensor})[0]
+        # raw_out shape: (1, nc+4, num_anchors) — e.g. (1, 10, 8400) for nc=6
+
+        # 3. Decode & NMS
+        detections = self._postprocess(raw_out, scale_x, scale_y)
+
+        # 4. Determine diagnosis
+        knowledge = _DISEASE_KNOWLEDGE[disease_type]
+        parasite_hits: List[tuple] = []
+
+        for x1, y1, x2, y2, conf, cls_id in detections:
+            raw_name = self._TRAIN_CLASSES[cls_id] if cls_id < len(self._TRAIN_CLASSES) else "unknown"
+            if cls_id not in self._PARASITE_IDS:
+                continue
+            display = self._DISPLAY[raw_name]
+            bbox = BoundingBox(
+                x_min      = round(x1 / image_width,  4),
+                y_min      = round(y1 / image_height, 4),
+                x_max      = round(x2 / image_width,  4),
+                y_max      = round(y2 / image_height, 4),
+                label      = raw_name,
+                confidence = round(float(conf), 4),
+            )
+            parasite_hits.append((display, float(conf), bbox))
+
+        if parasite_hits:
+            best             = max(parasite_hits, key=lambda x: x[1])
+            predicted_class  = best[0]
+            confidence_score = round(best[1], 4)
+            boxes_out        = [h[2] for h in parasite_hits]
+        else:
+            predicted_class  = "Negative"
+            confidence_score = 0.97
+            boxes_out        = []
+
+        elapsed_ms = (time.monotonic() - t0) * 1000
+
+        class_probs: Dict[str, float] = {c: 0.0 for c in knowledge["classes"]}
+        for display, conf, _ in parasite_hits:
+            if display in class_probs:
+                class_probs[display] = max(class_probs[display], round(conf, 4))
+        if predicted_class == "Negative":
+            class_probs["Negative"] = confidence_score
+
+        detail = AIResultDetail(
+            model_version       = self.MODEL_VERSION,
+            inference_time_ms   = round(elapsed_ms, 2),
+            image_width         = image_width,
+            image_height        = image_height,
+            class_probabilities = class_probs,
+            bounding_boxes      = boxes_out,
+        )
+        recommendation = knowledge["recommendations"].get(
+            predicted_class, "Please consult a specialist for further evaluation."
+        )
+        return AIResult(
+            predicted_class   = predicted_class,
+            confidence_score  = confidence_score,
+            severity_level    = _SEVERITY_MAP.get(predicted_class, "unknown"),
+            recommendation    = recommendation,
+            detail            = detail,
+            model_version     = self.MODEL_VERSION,
+            inference_time_ms = detail.inference_time_ms,
+        )
+
+    # ── Pre / post processing ─────────────────────────────────────────────────
+
+    def _preprocess(self, image_bytes: bytes):
+        import numpy as np
+
+        img = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+        orig_w, orig_h = img.size
+        img_resized    = img.resize((self.IMG_SIZE, self.IMG_SIZE), PILImage.BILINEAR)
+        arr = np.array(img_resized, dtype=np.float32) / 255.0   # [0,1]
+        arr = arr.transpose(2, 0, 1)                            # HWC → CHW
+        arr = np.expand_dims(arr, 0)                            # → NCHW
+        scale_x = orig_w / self.IMG_SIZE
+        scale_y = orig_h / self.IMG_SIZE
+        return arr, scale_x, scale_y
+
+    def _postprocess(self, raw: "np.ndarray", scale_x: float, scale_y: float) -> list:
+        """
+        Decode YOLO output and apply NMS.
+        raw shape: (1, nc+4, num_anchors)  e.g. (1, 10, 8400)
+        Returns list of (x1, y1, x2, y2, confidence, class_id) in original pixel coords.
+        """
+        import cv2
+        import numpy as np
+
+        pred = raw[0].T   # (num_anchors, nc+4)  — e.g. (8400, 10)
+        nc   = pred.shape[1] - 4
+
+        boxes_cxywh = pred[:, :4]          # cx, cy, w, h in 640-space
+        cls_scores  = pred[:, 4:]          # (num_anchors, nc)
+
+        class_ids    = np.argmax(cls_scores, axis=1)
+        confidences  = cls_scores[np.arange(len(cls_scores)), class_ids]
+
+        # Confidence filter
+        mask = confidences >= self.CONF_THRESH
+        if not mask.any():
+            return []
+
+        boxes_cxywh = boxes_cxywh[mask]
+        class_ids   = class_ids[mask]
+        confidences = confidences[mask]
+
+        # cx,cy,w,h (640-space) → x,y,w,h (orig pixel space, for cv2.NMSBoxes)
+        boxes_xywh = []
+        for cx, cy, w, h in boxes_cxywh:
+            x = float((cx - w / 2) * scale_x)
+            y = float((cy - h / 2) * scale_y)
+            boxes_xywh.append([x, y, float(w * scale_x), float(h * scale_y)])
+
+        indices = cv2.dnn.NMSBoxes(
+            boxes_xywh,
+            confidences.tolist(),
+            self.CONF_THRESH,
+            self.IOU_THRESH,
+        )
+        if len(indices) == 0:
+            return []
+
+        results = []
+        for i in (indices.flatten() if hasattr(indices, "flatten") else indices):
+            x, y, w, h = boxes_xywh[i]
+            results.append((x, y, x + w, y + h, confidences[i], int(class_ids[i])))
+        return results
+
+
+# ── Local trained YOLOv9 engine ───────────────────────────────────────────────
+
+class LocalYOLOv9Engine(InferenceEngine):
+    """
+    Runs the locally trained YOLOv9n model from models/best.pt.
+    Inference is offloaded to a thread-pool so the async loop stays free.
+    """
+
+    MODEL_VERSION = "yolov9n-malaria-v1.0"
+
+    # Raw YOLO class names that indicate active infection
+    _PARASITE_CLASSES = {"ring", "trophozoite", "schizont", "gametocyte"}
+
+    # Map raw class name → display name used in AIResult / recommendations
+    _DISPLAY = {
+        "ring":           "Ring Stage",
+        "trophozoite":    "Trophozoite",
+        "schizont":       "Schizont",
+        "gametocyte":     "Gametocyte",
+        "red blood cell": "Negative",
+        "leukocyte":      "Negative",
+    }
+
+    def __init__(self) -> None:
+        from ultralytics import YOLO
+        logger.info("Loading local YOLOv9 model", path=str(_MODEL_PATH))
+        self._model = YOLO(str(_MODEL_PATH))
+
+    async def infer(
+        self,
+        image_bytes: bytes,
+        disease_type: DiseaseType,
+        image_width: int,
+        image_height: int,
+    ) -> AIResult:
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            self._run_sync,
+            image_bytes, disease_type, image_width, image_height,
+        )
+
+    def _run_sync(
+        self,
+        image_bytes: bytes,
+        disease_type: DiseaseType,
+        image_width: int,
+        image_height: int,
+    ) -> AIResult:
+        import numpy as np
+
+        t0 = time.monotonic()
+
+        img = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_arr = np.array(img)
+
+        yolo_results = self._model.predict(source=img_arr, conf=0.25, verbose=False)
+
+        knowledge = _DISEASE_KNOWLEDGE[disease_type]
+        parasite_hits: List[tuple] = []   # (display_name, confidence, BoundingBox)
+
+        for r in yolo_results:
+            if r.boxes is None:
+                continue
+            names = r.names  # {0: 'red blood cell', 1: 'trophozoite', ...}
+            for box in r.boxes:
+                cls_id    = int(box.cls[0])
+                conf      = float(box.conf[0])
+                raw_name  = names.get(cls_id, f"class_{cls_id}")
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+                if raw_name not in self._PARASITE_CLASSES:
+                    continue
+
+                bbox = BoundingBox(
+                    x_min      = round(x1 / image_width,  4),
+                    y_min      = round(y1 / image_height, 4),
+                    x_max      = round(x2 / image_width,  4),
+                    y_max      = round(y2 / image_height, 4),
+                    label      = raw_name,
+                    confidence = round(conf, 4),
+                )
+                parasite_hits.append((self._DISPLAY[raw_name], conf, bbox))
+
+        # ── Determine diagnosis ───────────────────────────────────────────────
+        if parasite_hits:
+            best             = max(parasite_hits, key=lambda x: x[1])
+            predicted_class  = best[0]
+            confidence_score = round(best[1], 4)
+            boxes_out        = [h[2] for h in parasite_hits]
+        else:
+            predicted_class  = "Negative"
+            confidence_score = 0.97
+            boxes_out        = []
+
+        elapsed_ms = (time.monotonic() - t0) * 1000
+
+        # Class probabilities for the frontend result card
+        class_probs: Dict[str, float] = {c: 0.0 for c in knowledge["classes"]}
+        for display, conf, _ in parasite_hits:
+            if display in class_probs:
+                class_probs[display] = max(class_probs[display], round(conf, 4))
+        if predicted_class == "Negative":
+            class_probs["Negative"] = confidence_score
+
+        detail = AIResultDetail(
+            model_version     = self.MODEL_VERSION,
+            inference_time_ms = round(elapsed_ms, 2),
+            image_width       = image_width,
+            image_height      = image_height,
+            class_probabilities = class_probs,
+            bounding_boxes    = boxes_out,
+        )
+
+        recommendation = knowledge["recommendations"].get(
+            predicted_class, "Please consult a specialist for further evaluation."
+        )
+        severity = _SEVERITY_MAP.get(predicted_class, "unknown")
+
+        return AIResult(
+            predicted_class  = predicted_class,
+            confidence_score = confidence_score,
+            severity_level   = severity,
+            recommendation   = recommendation,
+            detail           = detail,
+            model_version    = self.MODEL_VERSION,
+            inference_time_ms = detail.inference_time_ms,
+        )
+
+
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 class AIService:
@@ -345,12 +684,22 @@ class AIService:
     """
 
     def __init__(self):
+        _onnx_path = _MODEL_PATH.with_suffix(".onnx")
+
         if settings.INFERENCE_BACKEND == "microservice" and not settings.DEBUG:
             self._engine: InferenceEngine = MicroserviceYOLOv9Engine()
             logger.info("AIService using real YOLO microservice")
+        elif _onnx_path.exists():
+            # ONNX preferred for deployment — no PyTorch dependency, ~50 MB RAM
+            self._engine = LocalONNXEngine()
+            logger.info("AIService using local ONNX model (onnxruntime)", path=str(_onnx_path))
+        elif _MODEL_PATH.exists():
+            # PyTorch fallback — for local dev after training, before ONNX export
+            self._engine = LocalYOLOv9Engine()
+            logger.info("AIService using local PyTorch YOLOv9 model", path=str(_MODEL_PATH))
         else:
             self._engine = MockYOLOv9Engine()
-            logger.info("AIService using mock YOLO engine (development)")
+            logger.info("AIService using mock YOLO engine (no trained model found)")
 
     async def predict(
         self,

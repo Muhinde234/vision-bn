@@ -8,15 +8,14 @@ Note: r = row = y-axis,  c = column = x-axis
 """
 from typing import Dict, List, Optional, Tuple
 
-# ── Class registry ────────────────────────────────────────────────────────────
+# ── Class registry (must match scripts/prepare_yolo_dataset.py ordering) ──────
 CLASS_NAMES: List[str] = [
-    "red blood cell",   # 0  — healthy RBCs (dominant class)
-    "trophozoite",      # 1  — ring-stage parasite, early trophozoite
-    "ring",             # 2  — ring stage
-    "schizont",         # 3  — mature stage, high parasitaemia risk
-    "gametocyte",       # 4  — sexual stage (transmissible)
+    "red blood cell",   # 0  — healthy RBCs (dominant background class)
+    "trophozoite",      # 1  — parasite: active feeding stage
+    "ring",             # 2  — parasite: earliest infection stage
+    "schizont",         # 3  — parasite: mature, high-density / high-risk
+    "gametocyte",       # 4  — parasite: sexual stage, transmissible
     "leukocyte",        # 5  — white blood cell (non-parasite)
-    "difficult",        # 6  — ambiguous / low-quality annotations
 ]
 
 CLASS_MAP: Dict[str, int] = {name: idx for idx, name in enumerate(CLASS_NAMES)}

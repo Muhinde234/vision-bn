@@ -1,5 +1,5 @@
 """
-Converts malaria JSON annotations → YOLO format dataset.
+Converts malaria JSON annotations -> YOLO format dataset.
 
 Output structure:
     yolo_dataset/
@@ -91,7 +91,7 @@ def write_split(items: list, split: str) -> int:
 
 def main():
     print("=" * 60)
-    print("  Malaria → YOLO Dataset Converter")
+    print("  Malaria -> YOLO Dataset Converter")
     print("=" * 60)
 
     with open(MALARIA / "training.json") as f:
@@ -105,8 +105,8 @@ def main():
     val_data   = all_train[:val_n]
     train_data = all_train[val_n:]
 
-    print(f"\nSplit  →  train: {len(train_data)}  val: {len(val_data)}  test: {len(test_data)}")
-    print(f"Output →  {OUT}\n")
+    print(f"\nSplit  ->  train: {len(train_data)}  val: {len(val_data)}  test: {len(test_data)}")
+    print(f"Output ->  {OUT}\n")
 
     for split, items in [("train", train_data), ("val", val_data), ("test", test_data)]:
         n = write_split(items, split)
@@ -128,7 +128,7 @@ names: {CLASSES}
     for i, c in enumerate(CLASSES):
         print(f"  {i}: {c}")
 
-    print(f"\ndataset.yaml  → {OUT / 'dataset.yaml'}")
+    print(f"\ndataset.yaml  -> {OUT / 'dataset.yaml'}")
     print("Done.  Now run:  python scripts/train_yolo.py")
 
 

@@ -32,10 +32,12 @@ opencv-python-headless==4.10.0.84
 httpx==0.27.0                  # async HTTP client for inference microservice
 numpy==2.2.4
 
-# ── Malaria YOLO training + inference ────────────────────────────────────────
-ultralytics>=8.2.0             # YOLOv8 training & inference engine
-onnx>=1.16.0                   # ONNX export support
-onnxruntime>=1.18.0            # ONNX runtime (CPU inference without GPU)
+# ── Malaria YOLO inference (production) ──────────────────────────────────────
+# onnxruntime runs best.onnx with no PyTorch dependency (~50 MB RAM on Render)
+onnxruntime>=1.18.0
+# ultralytics + onnx are needed ONLY for local training (scripts/train_yolo.py)
+# Install locally: pip install ultralytics onnx
+# Do NOT install on Render — torch alone is ~1 GB and OOMs the free tier.
 
 # ── Reporting ─────────────────────────────────────────────────────────────────
 reportlab==4.1.0               # PDF generation
