@@ -3,6 +3,7 @@ Database seeder — run once to populate VisionDx with realistic test data.
 Usage:
     python seed.py
 """
+import json
 import os
 import uuid
 from datetime import date, datetime, timezone, timedelta
@@ -16,9 +17,7 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 load_dotenv()
 
-SYNC_DATABASE_URL = os.environ.get("SYNC_DATABASE_URL")
-if not SYNC_DATABASE_URL:
-    raise RuntimeError("Set SYNC_DATABASE_URL environment variable before running seed.py")
+SYNC_DATABASE_URL = os.environ.get("SYNC_DATABASE_URL", "sqlite:///./visiondx_dev.db")
 
 engine = create_engine(SYNC_DATABASE_URL, echo=False)
 
@@ -317,7 +316,7 @@ def seed():
                 "gametocyte_count": gameto,
                 "model_version": "YOLOv9-malaria-v1.2",
                 "inference_time_ms": round(random.uniform(120, 280), 1),
-                "raw_inference_output": {"detections": par, "confidence": round(random.uniform(0.72, 0.97), 2)},
+                "raw_inference_output": json.dumps({"detections": par, "confidence": round(random.uniform(0.72, 0.97), 2)}),
                 "created_at": diagnoses_rows[i]["created_at"],
                 "updated_at": diagnoses_rows[i]["updated_at"],
             })
@@ -370,7 +369,7 @@ def seed():
                 "confidence_score": conf,
                 "recommendation": rec,
                 "severity_level": sev,
-                "raw_output": {
+                "raw_output": json.dumps({
                     "predicted_class": cls,
                     "confidence": conf,
                     "all_classes": {
@@ -383,7 +382,7 @@ def seed():
                     "bounding_boxes": [
                         {"x1": 0.1, "y1": 0.2, "x2": 0.3, "y2": 0.4, "conf": conf, "class": cls}
                     ],
-                },
+                }),
                 "model_version": "YOLOv9-malaria-v1.2",
                 "inference_time_ms": round(random.uniform(100, 260), 1),
                 "error_message": None,
