@@ -72,6 +72,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
+    redirect_slashes=False,   # prevent trailing-slash redirects that strip CORS headers
 )
 
 # ── Middleware ────────────────────────────────────────────────────────────────

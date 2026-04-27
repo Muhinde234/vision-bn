@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
+    @field_validator("ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def parse_origins(cls, v):
+        if isinstance(v, str):
+            # Support comma-separated: "http://localhost:3000,https://myapp.vercel.app"
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
+
     @field_validator("SECRET_KEY")
     @classmethod
     def secret_key_min_length(cls, v: str) -> str:
