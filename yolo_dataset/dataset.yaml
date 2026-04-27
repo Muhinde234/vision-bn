@@ -1,0 +1,8 @@
+# Malaria parasite detection — YOLOv9 dataset
+path: C:/Users/IGIRIMPUHWE Dositha/Desktop/final-project/vision-backend/yolo_dataset
+train: images/train
+val:   images/val
+test:  images/test
+
+nc: 6
+names: ['red blood cell', 'trophozoite', 'ring', 'schizont', 'gametocyte', 'leukocyte']

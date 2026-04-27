@@ -75,7 +75,27 @@ def main():
     print(f"  Device   : {device}")
     print("=" * 60)
 
-    model = YOLO("yolov9n.pt")   # ~4 MB pretrained weights downloaded automatically
+    # Download pretrained weights (try yolov9n, fall back to yolov8n)
+    import urllib.request
+    weights_path = ROOT / "yolov9n.pt"
+    if not weights_path.exists():
+        print("Downloading yolov9n.pt pretrained weights ...")
+        try:
+            urllib.request.urlretrieve(
+                "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov9n.pt",
+                str(weights_path),
+            )
+            print(f"[OK] yolov9n.pt downloaded")
+        except Exception as e:
+            print(f"[WARN] yolov9n.pt download failed ({e}), using yolov8n.pt instead")
+            weights_path = ROOT / "yolov8n.pt"
+            if not weights_path.exists():
+                urllib.request.urlretrieve(
+                    "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt",
+                    str(weights_path),
+                )
+
+    model = YOLO(str(weights_path))
 
     results = model.train(
         data     = str(DATASET),
