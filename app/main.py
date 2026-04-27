@@ -26,6 +26,7 @@ from app.core.exceptions import (
     ImageValidationError,
     InferenceError,
     NotFoundError,
+    StorageError,
     VisionDxError,
 )
 from app.core.logging import logger, setup_logging
@@ -123,6 +124,7 @@ _STATUS_MAP = {
     AuthorizationError: status.HTTP_403_FORBIDDEN,
     ImageValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
     InferenceError: status.HTTP_502_BAD_GATEWAY,
+    StorageError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 

@@ -91,7 +91,7 @@ class StorageService:
         from io import BytesIO
 
         uploader = _get_cloudinary()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             result = await loop.run_in_executor(
                 None,
