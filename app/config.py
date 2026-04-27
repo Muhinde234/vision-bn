@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: str = ""
 
     # ── AI Inference ──────────────────────────────────────────────────────────
-    INFERENCE_BACKEND: Literal["microservice", "local"] = "microservice"
+    INFERENCE_BACKEND: Literal["microservice", "local"] = "local"
     INFERENCE_SERVICE_URL: str = "http://localhost:8001"
     INFERENCE_TIMEOUT_SECONDS: int = 30
     CONFIDENCE_THRESHOLD: float = 0.35
