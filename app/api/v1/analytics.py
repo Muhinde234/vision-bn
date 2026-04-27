@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.permissions import require_any_role, require_doctor_or_admin
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.analytics import DashboardStats
+from app.schemas.analytics import (
+    CasesOverTime,
+    DashboardStats,
+    StageDistribution,
+    UserActivityStats,
+)
 from app.schemas.common import APIResponse
 from app.services.analytics_service import AnalyticsService
 from app.services.report_service import ReportService
@@ -29,6 +34,53 @@ async def get_dashboard(
         date_from=date_from, date_to=date_to, facility_name=facility_name
     )
     return APIResponse(data=stats)
+
+
+@router.get("/cases-over-time", response_model=APIResponse[List[CasesOverTime]])
+async def cases_over_time(
+    granularity: Literal["daily", "weekly", "monthly"] = Query("daily"),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    facility_name: Optional[str] = Query(None),
+    _: User = Depends(require_any_role),
+    db: AsyncSession = Depends(get_db),
+):
+    """Case counts grouped by day, week, or month."""
+    service = AnalyticsService(db)
+    data = await service.get_cases_over_time(
+        granularity=granularity, date_from=date_from,
+        date_to=date_to, facility_name=facility_name,
+    )
+    return APIResponse(data=data)
+
+
+@router.get("/stage-distribution", response_model=APIResponse[StageDistribution])
+async def stage_distribution(
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    facility_name: Optional[str] = Query(None),
+    _: User = Depends(require_any_role),
+    db: AsyncSession = Depends(get_db),
+):
+    """Breakdown of parasite stages across all diagnoses."""
+    service = AnalyticsService(db)
+    data = await service.get_stage_distribution(
+        date_from=date_from, date_to=date_to, facility_name=facility_name
+    )
+    return APIResponse(data=data)
+
+
+@router.get("/user-activity", response_model=APIResponse[List[UserActivityStats]])
+async def user_activity(
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    _: User = Depends(require_doctor_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Diagnoses submitted per technician."""
+    service = AnalyticsService(db)
+    data = await service.get_user_activity(date_from=date_from, date_to=date_to)
+    return APIResponse(data=data)
 
 
 @router.get("/export/csv")

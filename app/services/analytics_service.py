@@ -3,19 +3,23 @@ Analytics aggregation service.
 """
 import time
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from sqlalchemy import case, cast, Date, func, select
+from sqlalchemy import case, cast, Date, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.diagnosis import Diagnosis, DiagnosisSeverity, DiagnosisStatus
 from app.models.result import DiagnosisResult
+from app.models.user import User
 from app.schemas.analytics import (
+    CasesOverTime,
     DailyTrend,
     DashboardStats,
     FacilityStats,
     SeverityBreakdown,
     StageBreakdown,
+    StageDistribution,
+    UserActivityStats,
 )
 
 # ── Simple process-local TTL cache ───────────────────────────────────────────
@@ -149,6 +153,130 @@ class AnalyticsService:
                 positivity_rate=round((pos_day / total_day * 100) if total_day else 0, 2),
             ))
         return trends
+
+    async def get_cases_over_time(
+        self,
+        granularity: Literal["daily", "weekly", "monthly"] = "daily",
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        facility_name: Optional[str] = None,
+    ) -> List[CasesOverTime]:
+        filters = [Diagnosis.status.in_([DiagnosisStatus.COMPLETED, DiagnosisStatus.REVIEWED])]
+        if date_from:
+            filters.append(Diagnosis.created_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            filters.append(Diagnosis.created_at <= datetime.combine(date_to, datetime.max.time()))
+        if facility_name:
+            filters.append(Diagnosis.facility_name == facility_name)
+
+        if granularity == "monthly":
+            period_expr = func.to_char(Diagnosis.created_at, "YYYY-MM")
+        elif granularity == "weekly":
+            period_expr = func.to_char(Diagnosis.created_at, "IYYY-IW")
+        else:
+            period_expr = cast(Diagnosis.created_at, Date)
+
+        q = await self.db.execute(
+            select(
+                period_expr.label("period"),
+                func.count().label("total"),
+                func.count(case((Diagnosis.severity != DiagnosisSeverity.NEGATIVE, 1))).label("positive"),
+            )
+            .where(*filters)
+            .group_by("period")
+            .order_by("period")
+        )
+        return [
+            CasesOverTime(
+                period=str(row.period),
+                total_cases=row.total,
+                positive_cases=row.positive,
+                positivity_rate=round((row.positive / row.total * 100) if row.total else 0, 2),
+            )
+            for row in q
+        ]
+
+    async def get_stage_distribution(
+        self,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        facility_name: Optional[str] = None,
+    ) -> StageDistribution:
+        filters = [Diagnosis.status.in_([DiagnosisStatus.COMPLETED, DiagnosisStatus.REVIEWED])]
+        if date_from:
+            filters.append(Diagnosis.created_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            filters.append(Diagnosis.created_at <= datetime.combine(date_to, datetime.max.time()))
+        if facility_name:
+            filters.append(Diagnosis.facility_name == facility_name)
+
+        q = await self.db.execute(
+            select(
+                func.sum(DiagnosisResult.ring_count).label("ring"),
+                func.sum(DiagnosisResult.trophozoite_count).label("trophozoite"),
+                func.sum(DiagnosisResult.schizont_count).label("schizont"),
+                func.sum(DiagnosisResult.gametocyte_count).label("gametocyte"),
+                func.sum(DiagnosisResult.total_parasite_count).label("total_parasites"),
+                func.sum(DiagnosisResult.total_rbc_count).label("total_rbc"),
+            )
+            .join(Diagnosis, Diagnosis.id == DiagnosisResult.diagnosis_id)
+            .where(*filters)
+        )
+        row = q.one()
+        ring = int(row.ring or 0)
+        troph = int(row.trophozoite or 0)
+        schiz = int(row.schizont or 0)
+        gameto = int(row.gametocyte or 0)
+        total_par = int(row.total_parasites or 0)
+        total_rbc = int(row.total_rbc or 0)
+        return StageDistribution(
+            ring=ring, trophozoite=troph, schizont=schiz, gametocyte=gameto,
+            total_parasites=total_par, total_rbc=total_rbc,
+            overall_parasitaemia=round((total_par / total_rbc * 100) if total_rbc else 0, 4),
+        )
+
+    async def get_user_activity(
+        self,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+    ) -> List[UserActivityStats]:
+        filters = []
+        if date_from:
+            filters.append(Diagnosis.created_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            filters.append(Diagnosis.created_at <= datetime.combine(date_to, datetime.max.time()))
+
+        q = await self.db.execute(
+            select(
+                User.id,
+                User.full_name,
+                User.role,
+                User.facility_name,
+                func.count(Diagnosis.id).label("total"),
+                func.count(
+                    case((Diagnosis.status.in_([DiagnosisStatus.COMPLETED, DiagnosisStatus.REVIEWED]), Diagnosis.id))
+                ).label("completed"),
+                func.count(
+                    case((Diagnosis.severity != DiagnosisSeverity.NEGATIVE, Diagnosis.id))
+                ).label("positive"),
+            )
+            .outerjoin(Diagnosis, Diagnosis.created_by_id == User.id)
+            .where(*filters)
+            .group_by(User.id, User.full_name, User.role, User.facility_name)
+            .order_by(func.count(Diagnosis.id).desc())
+        )
+        return [
+            UserActivityStats(
+                user_id=str(row.id),
+                full_name=row.full_name,
+                role=row.role.value if hasattr(row.role, "value") else str(row.role),
+                facility_name=row.facility_name,
+                total_diagnoses=row.total,
+                completed_diagnoses=row.completed,
+                positive_diagnoses=row.positive,
+            )
+            for row in q
+        ]
 
     async def _top_facilities(self, base_filters, limit: int = 10) -> List[FacilityStats]:
         fac_q = await self.db.execute(

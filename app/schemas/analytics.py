@@ -48,3 +48,30 @@ class AnalyticsFilter(BaseModel):
     date_from: Optional[date] = None
     date_to: Optional[date] = None
     facility_name: Optional[str] = None
+
+
+class CasesOverTime(BaseModel):
+    period: str
+    total_cases: int
+    positive_cases: int
+    positivity_rate: float
+
+
+class StageDistribution(BaseModel):
+    ring: int = 0
+    trophozoite: int = 0
+    schizont: int = 0
+    gametocyte: int = 0
+    total_parasites: int = 0
+    total_rbc: int = 0
+    overall_parasitaemia: float = 0.0
+
+
+class UserActivityStats(BaseModel):
+    user_id: str
+    full_name: str
+    role: str
+    facility_name: Optional[str]
+    total_diagnoses: int
+    completed_diagnoses: int
+    positive_diagnoses: int

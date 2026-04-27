@@ -4,7 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, get_db
 from app.core.rate_limiter import limiter
 from app.models.user import User
-from app.schemas.auth import LoginRequest, PasswordChangeRequest, RefreshRequest, TokenResponse
+from app.schemas.auth import (
+    LoginRequest,
+    PasswordChangeRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    RefreshRequest,
+    TokenResponse,
+)
 from app.schemas.common import APIResponse
 from app.schemas.user import UserCreate, UserRead
 from app.services.auth_service import AuthService
@@ -75,3 +82,26 @@ async def change_password(
 async def me(current_user: User = Depends(get_current_user)):
     """Return authenticated user's profile."""
     return APIResponse(data=UserRead.model_validate(current_user))
+
+
+@router.post("/forgot-password", response_model=APIResponse)
+async def forgot_password(
+    payload: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a password reset token. In production, email it to the user."""
+    service = AuthService(db)
+    token = await service.create_reset_token(payload.email)
+    # In production, send token via email. Returned here for testing.
+    return APIResponse(message="Reset token generated", data={"reset_token": token})
+
+
+@router.post("/reset-password", response_model=APIResponse)
+async def reset_password(
+    payload: PasswordResetConfirm,
+    db: AsyncSession = Depends(get_db),
+):
+    """Consume a reset token and set a new password."""
+    service = AuthService(db)
+    await service.reset_password(payload.token, payload.new_password)
+    return APIResponse(message="Password reset successfully")

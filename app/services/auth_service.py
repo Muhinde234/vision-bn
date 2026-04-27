@@ -124,6 +124,55 @@ class AuthService:
             expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
 
+    # ── Password reset ────────────────────────────────────────────────────────
+
+    async def create_reset_token(self, email: str) -> str:
+        result = await self.db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+        if not user:
+            # Don't reveal whether email exists
+            return "no-op"
+
+        raw_token = create_refresh_token()
+        expires_at = datetime.now(tz=timezone.utc) + timedelta(hours=1)
+        record = RefreshToken(
+            user_id=user.id,
+            token_hash=hash_token(raw_token),
+            expires_at=expires_at,
+            device_info="password-reset",
+        )
+        self.db.add(record)
+        await self.db.flush()
+        return raw_token
+
+    async def reset_password(self, raw_token: str, new_password: str) -> None:
+        from app.schemas.user import UserCreate
+        token_hash = hash_token(raw_token)
+        result = await self.db.execute(
+            select(RefreshToken).where(
+                RefreshToken.token_hash == token_hash,
+                RefreshToken.revoked.is_(False),
+                RefreshToken.device_info == "password-reset",
+            )
+        )
+        stored = result.scalar_one_or_none()
+        if not stored or stored.expires_at < datetime.now(tz=timezone.utc):
+            raise AuthenticationError("Reset token is invalid or expired")
+
+        # Validate new password meets requirements
+        if len(new_password) < 8:
+            raise AuthenticationError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in new_password):
+            raise AuthenticationError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in new_password):
+            raise AuthenticationError("Password must contain at least one digit")
+
+        user_result = await self.db.execute(select(User).where(User.id == stored.user_id))
+        user = user_result.scalar_one()
+        user.hashed_password = hash_password(new_password)
+        stored.revoked = True
+        await self.db.flush()
+
     async def revoke_all_tokens(self, user_id: UUID) -> None:
         result = await self.db.execute(
             select(RefreshToken).where(
