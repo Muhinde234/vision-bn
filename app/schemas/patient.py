@@ -7,6 +7,12 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from app.models.patient import Sex
 
 
+def _normalize_sex(v):
+    if v is None:
+        return v
+    return str(v).lower()
+
+
 class PatientCreate(BaseModel):
     full_name: str
     date_of_birth: Optional[date] = None
@@ -15,6 +21,11 @@ class PatientCreate(BaseModel):
     address: Optional[str] = None
     facility_name: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator("sex", mode="before")
+    @classmethod
+    def normalize_sex(cls, v):
+        return _normalize_sex(v)
 
 
 class PatientUpdate(BaseModel):
@@ -25,6 +36,11 @@ class PatientUpdate(BaseModel):
     address: Optional[str] = None
     facility_name: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator("sex", mode="before")
+    @classmethod
+    def normalize_sex(cls, v):
+        return _normalize_sex(v)
 
 
 class PatientRead(BaseModel):
