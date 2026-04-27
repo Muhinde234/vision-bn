@@ -16,10 +16,9 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 load_dotenv()
 
-SYNC_DATABASE_URL = os.environ.get(
-    "SYNC_DATABASE_URL",
-    "postgresql+psycopg2://neondb_owner:npg_bQI2nHoRAUc9@ep-floral-math-an4qzomj.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require",
-)
+SYNC_DATABASE_URL = os.environ.get("SYNC_DATABASE_URL")
+if not SYNC_DATABASE_URL:
+    raise RuntimeError("Set SYNC_DATABASE_URL environment variable before running seed.py")
 
 engine = create_engine(SYNC_DATABASE_URL, echo=False)
 
