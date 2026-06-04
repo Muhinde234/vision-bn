@@ -82,7 +82,11 @@ def validate_blood_smear(image_bytes: bytes) -> None:
 
     blood_score = pink_ratio + light_ratio * 0.55 + purple_ratio
 
-    if blood_score < 0.08:
+    # If all non-smear signals are near zero AND brightness is in range for a lit
+    # microscopy slide, the image is clearly not a natural/outdoor photo — accept it
+    # regardless of the positive-signature score (handles differently-stained slides).
+    clearly_medical = non_smear_score < 0.05 and 0.25 < mean_brightness < 0.95
+    if not clearly_medical and blood_score < 0.08:
         raise ImageValidationError(_MSG)
 
 

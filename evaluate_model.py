@@ -104,14 +104,29 @@ def main():
 
     # ── Rating ────────────────────────────────────────────────────────────────
     print()
-    if map50 >= 0.70:
+    worst_recall = min(float(r) for r in r_per_class) if len(r_per_class) else 0.0
+    low_recall_classes = [
+        name
+        for i, name in enumerate(CLASS_NAMES)
+        if i < len(r_per_class) and float(r_per_class[i]) < 0.20
+    ]
+
+    if map50 >= 0.70 and worst_recall >= 0.50:
         grade = "GOOD — ready for testing in a clinical demo"
-    elif map50 >= 0.50:
-        grade = "FAIR — usable but needs more training / data"
+    elif map50 >= 0.50 and worst_recall >= 0.30:
+        grade = "FAIR — usable but still needs refinement"
     else:
-        grade = "POOR — model needs more epochs or data cleaning"
+        grade = "POOR — minority classes are still being missed"
     print(f"  Assessment: {grade}")
     print()
+
+    if low_recall_classes:
+        print("  Weak classes:")
+        for name in low_recall_classes:
+            print(f"    - {name}")
+        print()
+        print("  Recommendation: retrain with a larger image size, more epochs, and gentler augmentation so the rare classes get more signal.")
+        print()
 
     # Cleanup temp file
     Path(tmp_yaml).unlink(missing_ok=True)

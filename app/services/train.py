@@ -66,20 +66,26 @@ def _train(epochs: int, batch: int, imgsz: int, device: str) -> None:
             project     = str(MODELS_DIR / "runs"),
             name        = "malaria",
             exist_ok    = True,
-            patience    = 20,          # early stopping
+            patience    = 25,          # early stopping
             save_period = 10,          # checkpoint every 10 epochs
+            cache       = True,
+            cos_lr      = True,
+            close_mosaic = 10,
+            optimizer   = "AdamW",
+            lr0         = 0.003,
+            weight_decay = 0.0005,
             # ── augmentation ──────────────────────────────────────────────────
-            hsv_h       = 0.015,
-            hsv_s       = 0.7,
+            hsv_h       = 0.01,
+            hsv_s       = 0.5,
             hsv_v       = 0.4,
-            degrees     = 10.0,
-            translate   = 0.1,
-            scale       = 0.5,
-            flipud      = 0.5,
+            degrees     = 8.0,
+            translate   = 0.08,
+            scale       = 0.4,
+            flipud      = 0.2,
             fliplr      = 0.5,
-            mosaic      = 1.0,
-            mixup       = 0.1,
-            copy_paste  = 0.1,
+            mosaic      = 0.7,
+            mixup       = 0.0,
+            copy_paste  = 0.0,
         )
 
         # ── copy best weights ──────────────────────────────────────────────────

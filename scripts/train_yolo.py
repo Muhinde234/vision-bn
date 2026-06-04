@@ -24,8 +24,8 @@ MODELS_DIR  = ROOT / "models"
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--epochs", type=int, default=30,
-                   help="Training epochs (default 30; use 50+ for best accuracy)")
+    p.add_argument("--epochs", type=int, default=100,
+                   help="Training epochs (default 100; use fewer only for quick smoke tests)")
     p.add_argument("--batch",  type=int, default=8,
                    help="Batch size (reduce to 4 if out of memory)")
     p.add_argument("--imgsz",  type=int, default=640,
@@ -107,18 +107,27 @@ def main():
         project  = str(ROOT / "runs" / "train"),
         name     = "malaria_yolov9n",
         exist_ok = True,
-        patience = 15,          # early-stop if no improvement for 15 epochs
+        patience = 25,          # early-stop if no improvement for 25 epochs
         save     = True,
-        cache    = False,       # set True to cache images in RAM (needs ~8 GB)
+        cache    = True,        # set False if RAM becomes tight
         verbose  = True,
+        cos_lr   = True,
+        close_mosaic = 10,
+        optimizer = "AdamW",
+        lr0      = 0.003,
+        weight_decay = 0.0005,
         # Augmentation (good defaults for microscopy images)
         hsv_h    = 0.01,        # minimal hue shift (blood smears are colour-consistent)
         hsv_s    = 0.5,
         hsv_v    = 0.4,
-        degrees  = 15,          # rotation
+        degrees  = 8,           # rotation
+        translate = 0.08,
+        scale    = 0.4,
         fliplr   = 0.5,
-        flipud   = 0.3,
-        mosaic   = 0.8,
+        flipud   = 0.2,
+        mosaic   = 0.7,
+        mixup    = 0.0,
+        copy_paste = 0.0,
     )
 
     # ── Copy best.pt ──────────────────────────────────────────────────────────
