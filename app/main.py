@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
         # Normalize legacy role casing so older rows do not break enum loading.
         await conn.execute(
             text(
-                "UPDATE users SET role = lower(role) WHERE role IN ('ADMIN', 'DOCTOR', 'LAB_TECHNICIAN')"
+                "UPDATE users SET role = lower(role::text)::user_role WHERE role::text IN ('ADMIN', 'DOCTOR', 'LAB_TECHNICIAN')"
             )
         )
     logger.info("VisionDx API starting", version=settings.APP_VERSION, env=settings.APP_ENV)
