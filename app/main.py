@@ -16,6 +16,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from sqlalchemy import text
 
 from app.api.v1.router import api_router
 from app.config import settings
@@ -56,6 +57,12 @@ async def lifespan(app: FastAPI):
     from app.db.session import engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Normalize legacy role casing so older rows do not break enum loading.
+        await conn.execute(
+            text(
+                "UPDATE users SET role = lower(role) WHERE role IN ('ADMIN', 'DOCTOR', 'LAB_TECHNICIAN')"
+            )
+        )
     logger.info("VisionDx API starting", version=settings.APP_VERSION, env=settings.APP_ENV)
     yield
     logger.info("VisionDx API shutting down")
