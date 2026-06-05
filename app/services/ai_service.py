@@ -350,7 +350,7 @@ class LocalONNXEngine(InferenceEngine):
 
     ONNX_PATH     = Path(__file__).resolve().parents[2] / "models" / "best.onnx"
     MODEL_VERSION = "yolov9n-malaria-onnx-v1.0"
-    IMG_SIZE      = 640
+    IMG_SIZE      = settings.INFERENCE_IMG_SIZE
     CONF_THRESH   = 0.25
     IOU_THRESH    = 0.45
 
@@ -372,11 +372,21 @@ class LocalONNXEngine(InferenceEngine):
     def __init__(self) -> None:
         import onnxruntime as ort
         logger.info("Loading ONNX model", path=str(self.ONNX_PATH))
+        # Configure session options for better CPU performance
+        sess_options = ort.SessionOptions()
+        try:
+            sess_options.intra_op_num_threads = int(settings.INFERENCE_ORT_NUM_THREADS)
+        except Exception:
+            pass
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self._session = ort.InferenceSession(
             str(self.ONNX_PATH),
+            sess_options=sess_options,
             providers=["CPUExecutionProvider"],
         )
         self._input_name = self._session.get_inputs()[0].name
+        # Ensure instance uses configured image size
+        self.IMG_SIZE = int(settings.INFERENCE_IMG_SIZE)
 
     # ── Async wrapper ─────────────────────────────────────────────────────────
 

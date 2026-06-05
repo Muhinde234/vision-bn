@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     INFERENCE_BACKEND: Literal["microservice", "local"] = "local"
     INFERENCE_SERVICE_URL: str = "http://localhost:8001"
     INFERENCE_TIMEOUT_SECONDS: int = 30
+    # Model / ONNX tuning
+    INFERENCE_IMG_SIZE: int = 320
+    INFERENCE_ORT_NUM_THREADS: int = 1
     CONFIDENCE_THRESHOLD: float = 0.35
 
     # ── Email (SMTP) ──────────────────────────────────────────────────────────
