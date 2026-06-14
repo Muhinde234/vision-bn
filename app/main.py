@@ -58,11 +58,18 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         # Normalize legacy role casing so older rows do not break enum loading.
-        await conn.execute(
-            text(
-                "UPDATE users SET role = upper(role::text)::user_role WHERE role::text IN ('admin', 'doctor', 'lab_technician') OR role::text IN ('ADMIN', 'DOCTOR', 'LAB_TECHNICIAN')"
+        if conn.dialect.name == "postgresql":
+            await conn.execute(
+                text(
+                    "UPDATE users SET role = upper(role::text)::user_role WHERE role::text IN ('admin', 'doctor', 'lab_technician') OR role::text IN ('ADMIN', 'DOCTOR', 'LAB_TECHNICIAN')"
+                )
             )
-        )
+        else:
+            await conn.execute(
+                text(
+                    "UPDATE users SET role = UPPER(role) WHERE role IN ('admin', 'doctor', 'lab_technician', 'ADMIN', 'DOCTOR', 'LAB_TECHNICIAN')"
+                )
+            )
     logger.info("VisionDx API starting", version=settings.APP_VERSION, env=settings.APP_ENV)
     yield
     logger.info("VisionDx API shutting down")
@@ -169,13 +176,6 @@ app.mount("/static", StaticFiles(directory=settings.UPLOAD_DIR), name="static")
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(api_router, prefix="/api/v1")
-
-# ── Malaria detection routes (no auth required for standalone use) ─────────────
-from app.routes.train   import router as train_router
-from app.routes.predict import router as predict_router
-
-app.include_router(train_router)
-app.include_router(predict_router)
 
 
 # ── Convenience alias: /api/v1/user/profile → /api/v1/auth/me ────────────────

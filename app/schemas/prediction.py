@@ -44,6 +44,10 @@ class AIResultDetail(BaseModel):
     image_height: int
     class_probabilities: Dict[str, float] = {}
     bounding_boxes: List[BoundingBox] = []
+    total_rbc_count: int = 0
+    parasitaemia_percent: float = 0.0
+    stage_percentages: Dict[str, float] = {}
+    detection_counts: Dict[str, int] = {}
 
 
 # ── Response ──────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 """
-Evaluate the trained malaria YOLOv8 model on the held-out test set.
+Evaluate the trained malaria YOLOv9 model on the held-out test set.
 Prints overall and per-class mAP50, mAP50-95, precision, and recall.
 """
 import sys
@@ -9,6 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent
 _CANDIDATE_PATHS = [
+    ROOT / "best.pt",
     ROOT / "models" / "best.pt",
     ROOT / "models" / "runs" / "malaria" / "weights" / "best.pt",
 ]

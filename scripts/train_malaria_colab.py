@@ -1,5 +1,5 @@
 """
-Colab-friendly malaria YOLOv8 training script.
+Colab-friendly malaria YOLOv9 training script.
 
 Typical Colab usage:
     from google.colab import drive
@@ -10,7 +10,7 @@ Typical Colab usage:
         --output-dir /content/drive/MyDrive/malaria_model
 
 The script unzips the dataset if needed, writes a Colab-safe data.yaml,
-trains YOLOv8n with stronger settings for small-object detection, and copies
+trains YOLOv9 with stronger settings for small-object detection, and copies
 best.pt to the output directory.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ CLASS_NAMES = [
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train malaria YOLOv8n in Colab")
+    parser = argparse.ArgumentParser(description="Train malaria YOLOv9 in Colab")
     parser.add_argument("--zip-path", required=True, help="Path to the dataset zip file")
     parser.add_argument("--dataset-dir", required=True, help="Directory to extract the dataset into")
     parser.add_argument("--output-dir", required=True, help="Directory where best.pt will be copied")
@@ -89,7 +89,7 @@ def train_model(yaml_path: Path, args: argparse.Namespace):
     except ImportError as exc:
         raise RuntimeError("ultralytics is not installed. Run: pip install ultralytics") from exc
 
-    model = YOLO("yolov8n.pt")
+    model = YOLO("yolov9t.pt")
     return model.train(
         data=yaml_path.as_posix(),
         epochs=args.epochs,

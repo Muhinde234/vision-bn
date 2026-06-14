@@ -294,7 +294,7 @@ def seed():
                     trophozoite_count=counts["troph"],
                     schizont_count=counts["schiz"],
                     gametocyte_count=counts["gameto"],
-                    model_version="YOLOv9-malaria-v1.2",
+                    model_version="YOLOv9n-malaria-v2.3.1",
                     inference_time_ms=round(RNG.uniform(115, 275), 1),
                     raw_inference_output=json.dumps({
                         "detections": counts["total_par"],
@@ -324,7 +324,7 @@ def seed():
                         "bounding_boxes": [{"x1": 0.1, "y1": 0.2, "x2": 0.3, "y2": 0.4,
                                             "conf": conf, "class": cls}],
                     }),
-                    model_version="YOLOv9-malaria-v1.2",
+                    model_version="YOLOv9n-malaria-v2.3.1",
                     inference_time_ms=round(RNG.uniform(100, 265), 1),
                     error_message=None,
                     diagnosis_id=diag_id,

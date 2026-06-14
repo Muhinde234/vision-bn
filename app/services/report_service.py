@@ -57,12 +57,14 @@ class ReportService:
             "Diagnosis ID", "Date", "Patient Code", "Patient Name",
             "Facility", "Severity", "Parasitaemia (%)",
             "Total Parasites", "RBC Count",
-            "Ring", "Trophozoite", "Schizont", "Gametocyte",
+            "Ring Count", "Ring (%)", "Trophozoite Count", "Trophozoite (%)",
+            "Schizont Count", "Schizont (%)", "Gametocyte Count", "Gametocyte (%)",
             "Technician", "Inference Time (ms)",
         ])
 
         for d in diagnoses:
             r = d.result
+            rbc = r.total_rbc_count if r else 0
             writer.writerow([
                 str(d.id),
                 d.created_at.date().isoformat(),
@@ -74,9 +76,13 @@ class ReportService:
                 r.total_parasite_count if r else "",
                 r.total_rbc_count if r else "",
                 r.ring_count if r else "",
+                f"{(r.ring_count / rbc * 100):.2f}" if r and rbc else "0.00",
                 r.trophozoite_count if r else "",
+                f"{(r.trophozoite_count / rbc * 100):.2f}" if r and rbc else "0.00",
                 r.schizont_count if r else "",
+                f"{(r.schizont_count / rbc * 100):.2f}" if r and rbc else "0.00",
                 r.gametocyte_count if r else "",
+                f"{(r.gametocyte_count / rbc * 100):.2f}" if r and rbc else "0.00",
                 d.created_by.full_name if d.created_by else "",
                 r.inference_time_ms if r else "",
             ])
@@ -132,14 +138,22 @@ class ReportService:
         # Table
         headers = [
             "Date", "Patient Code", "Patient Name", "Facility",
-            "Severity", "Parasitaemia %", "Parasites", "Stage (R/T/S/G)",
+            "Severity", "Parasitaemia %", "Parasites", "Stage Counts\n(R/T/S/G)", "Stage %\n(R/T/S/G)",
         ]
         rows = [headers]
         for d in diagnoses:
             r = d.result
-            stage_str = ""
+            stage_str = "-"
+            pct_str = "-"
             if r:
                 stage_str = f"{r.ring_count}/{r.trophozoite_count}/{r.schizont_count}/{r.gametocyte_count}"
+                rbc = r.total_rbc_count or 0
+                rp = f"{(r.ring_count / rbc * 100):.1f}" if rbc else "0.0"
+                tp = f"{(r.trophozoite_count / rbc * 100):.1f}" if rbc else "0.0"
+                sp = f"{(r.schizont_count / rbc * 100):.1f}" if rbc else "0.0"
+                gp = f"{(r.gametocyte_count / rbc * 100):.1f}" if rbc else "0.0"
+                pct_str = f"{rp}% / {tp}% / {sp}% / {gp}%"
+                
             rows.append([
                 d.created_at.date().isoformat(),
                 d.patient.patient_code if d.patient else "-",
@@ -149,6 +163,7 @@ class ReportService:
                 f"{r.parasitaemia_percent:.2f}" if r else "-",
                 str(r.total_parasite_count) if r else "-",
                 stage_str,
+                pct_str,
             ])
 
         table = Table(rows, repeatRows=1)

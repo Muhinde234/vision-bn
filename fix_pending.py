@@ -56,7 +56,7 @@ def make_result(diagnosis_id: str, image_id: str, severity: str, parasite_count:
         "trophozoite_count":    trophozoite,
         "schizont_count":       schizont,
         "gametocyte_count":     gametocyte,
-        "model_version":        "yolov9-malaria-v1.2",
+        "model_version":        "YOLOv9n-malaria-v2.3.1",
         "inference_time_ms":    round(RNG.uniform(180, 420), 1),
         "created_at":           datetime.now(timezone.utc),
         "updated_at":           datetime.now(timezone.utc),

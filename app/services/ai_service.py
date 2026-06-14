@@ -32,7 +32,8 @@ from app.core.logging import logger
 from app.models.prediction import DiseaseType
 from app.schemas.prediction import AIResultDetail, BoundingBox
 
-_MODEL_PATH = Path(__file__).resolve().parents[2] / "models" / "best.pt"
+_ROOT_DIR = Path(__file__).resolve().parents[2]
+_MODEL_PATH = _ROOT_DIR / "best.pt" if (_ROOT_DIR / "best.pt").exists() else _ROOT_DIR / "models" / "best.pt"
 
 
 # ── Result container ──────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ class MockYOLOv9Engine(InferenceEngine):
     always returns the same result within a session.
     """
 
-    MODEL_VERSION = "yolov9-mock-v1.0"
+    MODEL_VERSION = "yolov9n-mock-v2.3.1"
 
     async def infer(
         self,
@@ -226,8 +227,35 @@ class MockYOLOv9Engine(InferenceEngine):
         total = sum(raw_probs.values())
         class_probs = {c: round(v / total, 4) for c, v in raw_probs.items()}
 
-        # Mock bounding boxes for positive findings
+        # Mock bounding boxes for all detections
         boxes: List[BoundingBox] = []
+        
+        # Always generate some healthy red blood cells
+        for _ in range(rng.randint(20, 50)):
+            x1 = rng.uniform(0.0, 0.9)
+            y1 = rng.uniform(0.0, 0.9)
+            boxes.append(BoundingBox(
+                x_min=round(x1, 4),
+                y_min=round(y1, 4),
+                x_max=round(min(1.0, x1 + rng.uniform(0.05, 0.1)), 4),
+                y_max=round(min(1.0, y1 + rng.uniform(0.05, 0.1)), 4),
+                label="red blood cell",
+                confidence=round(rng.uniform(0.85, 0.99), 4),
+            ))
+            
+        # Maybe a leukocyte
+        if rng.random() > 0.5:
+            x1 = rng.uniform(0.1, 0.8)
+            y1 = rng.uniform(0.1, 0.8)
+            boxes.append(BoundingBox(
+                x_min=round(x1, 4),
+                y_min=round(y1, 4),
+                x_max=round(min(1.0, x1 + rng.uniform(0.1, 0.15)), 4),
+                y_max=round(min(1.0, y1 + rng.uniform(0.1, 0.15)), 4),
+                label="leukocyte",
+                confidence=round(rng.uniform(0.85, 0.99), 4),
+            ))
+
         if predicted_class not in ("Negative", "Normal", "No DR", "Benign", "No Pneumonia"):
             for _ in range(rng.randint(1, 4)):
                 x1 = rng.uniform(0.05, 0.6)
@@ -243,6 +271,20 @@ class MockYOLOv9Engine(InferenceEngine):
 
         elapsed_ms = (time.monotonic() - t0) * 1000 + rng.uniform(40, 120)  # simulate latency
 
+        rbc_count = sum(1 for b in boxes if b.label == "red blood cell")
+        parasite_count = sum(1 for b in boxes if b.label not in ("red blood cell", "leukocyte"))
+        parasitaemia = round((parasite_count / rbc_count * 100), 4) if rbc_count > 0 else 0.0
+
+        stage_counts = {}
+        for b in boxes:
+            if b.label not in ("red blood cell", "leukocyte"):
+                stage_counts[b.label] = stage_counts.get(b.label, 0) + 1
+        stage_percentages = {stage: round((count / rbc_count * 100), 4) for stage, count in stage_counts.items()} if rbc_count > 0 else {}
+
+        detection_counts = {}
+        for b in boxes:
+            detection_counts[b.label] = detection_counts.get(b.label, 0) + 1
+
         detail = AIResultDetail(
             model_version=self.MODEL_VERSION,
             inference_time_ms=round(elapsed_ms, 2),
@@ -250,6 +292,10 @@ class MockYOLOv9Engine(InferenceEngine):
             image_height=image_height,
             class_probabilities=class_probs,
             bounding_boxes=boxes,
+            total_rbc_count=rbc_count,
+            parasitaemia_percent=parasitaemia,
+            stage_percentages=stage_percentages,
+            detection_counts=detection_counts,
         )
 
         recommendation = knowledge["recommendations"].get(
@@ -322,6 +368,10 @@ class MicroserviceYOLOv9Engine(InferenceEngine):
             image_height=image_height,
             class_probabilities=data.get("class_probabilities", {}),
             bounding_boxes=[BoundingBox(**b) for b in data.get("bounding_boxes", [])],
+            total_rbc_count=data.get("total_rbc_count", 0),
+            parasitaemia_percent=data.get("parasitaemia_percent", 0.0),
+            stage_percentages=data.get("stage_percentages", {}),
+            detection_counts=data.get("detection_counts", {}),
         )
 
         return AIResult(
@@ -348,8 +398,8 @@ class LocalONNXEngine(InferenceEngine):
         3 schizont        4 gametocyte   5 leukocyte
     """
 
-    ONNX_PATH     = Path(__file__).resolve().parents[2] / "models" / "best.onnx"
-    MODEL_VERSION = "yolov9n-malaria-onnx-v1.0"
+    ONNX_PATH     = _MODEL_PATH.with_suffix(".onnx")
+    MODEL_VERSION = "yolov9n-malaria-onnx-v2.3.1"
     IMG_SIZE      = settings.INFERENCE_IMG_SIZE
     CONF_THRESH   = 0.25
     IOU_THRESH    = 0.45
@@ -374,11 +424,21 @@ class LocalONNXEngine(InferenceEngine):
         logger.info("Loading ONNX model", path=str(self.ONNX_PATH))
         # Configure session options for better CPU performance
         sess_options = ort.SessionOptions()
+        
+        # Enable all graph optimizations (constant folding, node fusion, etc.)
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        
+        # Sequential execution is generally faster for YOLO on CPU to avoid thread contention
+        sess_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        
         try:
             sess_options.intra_op_num_threads = int(settings.INFERENCE_ORT_NUM_THREADS)
         except Exception:
             pass
-        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        sess_options.inter_op_num_threads = 1  # Restrict inter-op to 1 to maximize intra-op efficiency
+        sess_options.enable_mem_pattern = True
+        sess_options.enable_cpu_mem_arena = True
+        
         self._session = ort.InferenceSession(
             str(self.ONNX_PATH),
             sess_options=sess_options,
@@ -438,12 +498,10 @@ class LocalONNXEngine(InferenceEngine):
         # 4. Determine diagnosis
         knowledge = _DISEASE_KNOWLEDGE[disease_type]
         parasite_hits: List[tuple] = []
+        all_boxes: List[BoundingBox] = []
 
         for x1, y1, x2, y2, conf, cls_id in detections:
             raw_name = self._TRAIN_CLASSES[cls_id] if cls_id < len(self._TRAIN_CLASSES) else "unknown"
-            if cls_id not in self._PARASITE_IDS:
-                continue
-            display = self._DISPLAY[raw_name]
             bbox = BoundingBox(
                 x_min      = round(x1 / image_width,  4),
                 y_min      = round(y1 / image_height, 4),
@@ -452,17 +510,21 @@ class LocalONNXEngine(InferenceEngine):
                 label      = raw_name,
                 confidence = round(float(conf), 4),
             )
-            parasite_hits.append((display, float(conf), bbox))
+            all_boxes.append(bbox)
+            
+            if cls_id in self._PARASITE_IDS:
+                display = self._DISPLAY[raw_name]
+                parasite_hits.append((display, float(conf), bbox))
 
         if parasite_hits:
             best             = max(parasite_hits, key=lambda x: x[1])
             predicted_class  = best[0]
             confidence_score = round(best[1], 4)
-            boxes_out        = [h[2] for h in parasite_hits]
         else:
             predicted_class  = "Negative"
             confidence_score = 0.97
-            boxes_out        = []
+            
+        boxes_out = all_boxes
 
         elapsed_ms = (time.monotonic() - t0) * 1000
 
@@ -473,6 +535,19 @@ class LocalONNXEngine(InferenceEngine):
         if predicted_class == "Negative":
             class_probs["Negative"] = confidence_score
 
+        rbc_count = sum(1 for b in boxes_out if b.label == "red blood cell")
+        parasite_count = len(parasite_hits)
+        parasitaemia = round((parasite_count / rbc_count * 100), 4) if rbc_count > 0 else 0.0
+
+        stage_counts = {}
+        for display, conf, bbox in parasite_hits:
+            stage_counts[display] = stage_counts.get(display, 0) + 1
+        stage_percentages = {stage: round((count / rbc_count * 100), 4) for stage, count in stage_counts.items()} if rbc_count > 0 else {}
+
+        detection_counts = {}
+        for b in boxes_out:
+            detection_counts[b.label] = detection_counts.get(b.label, 0) + 1
+
         detail = AIResultDetail(
             model_version       = self.MODEL_VERSION,
             inference_time_ms   = round(elapsed_ms, 2),
@@ -480,6 +555,10 @@ class LocalONNXEngine(InferenceEngine):
             image_height        = image_height,
             class_probabilities = class_probs,
             bounding_boxes      = boxes_out,
+            total_rbc_count     = rbc_count,
+            parasitaemia_percent= parasitaemia,
+            stage_percentages   = stage_percentages,
+            detection_counts    = detection_counts,
         )
         recommendation = knowledge["recommendations"].get(
             predicted_class, "Please consult a specialist for further evaluation."
@@ -497,14 +576,28 @@ class LocalONNXEngine(InferenceEngine):
     # ── Pre / post processing ─────────────────────────────────────────────────
 
     def _preprocess(self, image_bytes: bytes):
+        import cv2
         import numpy as np
 
-        img = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
-        orig_w, orig_h = img.size
-        img_resized    = img.resize((self.IMG_SIZE, self.IMG_SIZE), PILImage.BILINEAR)
-        arr = np.array(img_resized, dtype=np.float32) / 255.0   # [0,1]
+        # 1. Faster decode via OpenCV
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        orig_h, orig_w = img.shape[:2]
+
+        # 2. Faster resize
+        img_resized = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE), interpolation=cv2.INTER_LINEAR)
+        
+        # 3. Faster normalization (multiplication is cheaper than division)
+        arr = img_resized.astype(np.float32)
+        arr *= 0.003921568627  # equivalent to 1.0 / 255.0
+        
         arr = arr.transpose(2, 0, 1)                            # HWC → CHW
         arr = np.expand_dims(arr, 0)                            # → NCHW
+        
+        # 4. CRITICAL: Ensure contiguous memory layout to prevent ORT from doing a hidden copy
+        arr = np.ascontiguousarray(arr)
+        
         scale_x = orig_w / self.IMG_SIZE
         scale_y = orig_h / self.IMG_SIZE
         return arr, scale_x, scale_y
@@ -567,7 +660,7 @@ class LocalYOLOv9Engine(InferenceEngine):
     Inference is offloaded to a thread-pool so the async loop stays free.
     """
 
-    MODEL_VERSION = "yolov9n-malaria-v1.0"
+    MODEL_VERSION = "yolov9n-malaria-v2.3.1"
 
     # Raw YOLO class names that indicate active infection
     _PARASITE_CLASSES = {"ring", "trophozoite", "schizont", "gametocyte"}
@@ -631,6 +724,7 @@ class LocalYOLOv9Engine(InferenceEngine):
 
         knowledge = _DISEASE_KNOWLEDGE[disease_type]
         parasite_hits: List[tuple] = []   # (display_name, confidence, BoundingBox)
+        all_boxes: List[BoundingBox] = []
 
         for r in yolo_results:
             if r.boxes is None:
@@ -642,9 +736,6 @@ class LocalYOLOv9Engine(InferenceEngine):
                 raw_name  = names.get(cls_id, f"class_{cls_id}")
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
 
-                if raw_name not in self._PARASITE_CLASSES:
-                    continue
-
                 bbox = BoundingBox(
                     x_min      = round(x1 / image_width,  4),
                     y_min      = round(y1 / image_height, 4),
@@ -653,18 +744,21 @@ class LocalYOLOv9Engine(InferenceEngine):
                     label      = raw_name,
                     confidence = round(conf, 4),
                 )
-                parasite_hits.append((self._DISPLAY[raw_name], conf, bbox))
+                all_boxes.append(bbox)
+                
+                if raw_name in self._PARASITE_CLASSES:
+                    parasite_hits.append((self._DISPLAY[raw_name], conf, bbox))
 
         # ── Determine diagnosis ───────────────────────────────────────────────
         if parasite_hits:
             best             = max(parasite_hits, key=lambda x: x[1])
             predicted_class  = best[0]
             confidence_score = round(best[1], 4)
-            boxes_out        = [h[2] for h in parasite_hits]
         else:
             predicted_class  = "Negative"
             confidence_score = 0.97
-            boxes_out        = []
+            
+        boxes_out = all_boxes
 
         elapsed_ms = (time.monotonic() - t0) * 1000
 
@@ -676,6 +770,19 @@ class LocalYOLOv9Engine(InferenceEngine):
         if predicted_class == "Negative":
             class_probs["Negative"] = confidence_score
 
+        rbc_count = sum(1 for b in boxes_out if b.label == "red blood cell")
+        parasite_count = len(parasite_hits)
+        parasitaemia = round((parasite_count / rbc_count * 100), 4) if rbc_count > 0 else 0.0
+
+        stage_counts = {}
+        for display, conf, bbox in parasite_hits:
+            stage_counts[display] = stage_counts.get(display, 0) + 1
+        stage_percentages = {stage: round((count / rbc_count * 100), 4) for stage, count in stage_counts.items()} if rbc_count > 0 else {}
+
+        detection_counts = {}
+        for b in boxes_out:
+            detection_counts[b.label] = detection_counts.get(b.label, 0) + 1
+
         detail = AIResultDetail(
             model_version     = self.MODEL_VERSION,
             inference_time_ms = round(elapsed_ms, 2),
@@ -683,6 +790,10 @@ class LocalYOLOv9Engine(InferenceEngine):
             image_height      = image_height,
             class_probabilities = class_probs,
             bounding_boxes    = boxes_out,
+            total_rbc_count   = rbc_count,
+            parasitaemia_percent= parasitaemia,
+            stage_percentages = stage_percentages,
+            detection_counts  = detection_counts,
         )
 
         recommendation = knowledge["recommendations"].get(
@@ -726,7 +837,7 @@ class AIService:
         elif _MODEL_PATH.exists():
             # PyTorch fallback — for local dev after training, before ONNX export
             self._engine = LocalYOLOv9Engine()
-            logger.info("AIService using local PyTorch YOLOv9 model", path=str(_MODEL_PATH))
+            logger.info("AIService using local PyTorch YOLOv9n model", path=str(_MODEL_PATH))
         else:
             self._engine = MockYOLOv9Engine()
             logger.info("AIService using mock YOLO engine (no trained model found)")
